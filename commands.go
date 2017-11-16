@@ -375,6 +375,7 @@ func (c *Cli) CmdCreate() error {
 	if issuetype == "" {
 		issuetype = c.defaultIssueType()
 	}
+	epic := c.getOptString("epic", "")
 
 	issueData := make(map[string]interface{})
 	issueData["overrides"] = c.opts
@@ -416,6 +417,15 @@ func (c *Cli) CmdCreate() error {
 					"issue": key,
 					"link":  link,
 				})
+
+				// Add issue to epic
+				if epic != "" {
+					err = c.CmdEpicAdd(epic, key)
+					if err != nil {
+						return err
+					}
+				}
+
 				if !c.GetOptBool("quiet", false) {
 					fmt.Printf("OK %s %s\n", key, link)
 				}
@@ -429,6 +439,39 @@ func (c *Cli) CmdCreate() error {
 		},
 	)
 }
+
+func (c *Cli) CmdEpicAdd(epic string, task string) error {
+	json, err := jsonEncode(map[string]interface{}{
+		"issues": []string{
+			task,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	uri := fmt.Sprintf("%s/rest/agile/1.0/epic/%s/issue", c.endpoint, epic)
+	if c.getOptBool("dryrun", false) {
+		log.Debugf("POST: %s", json)
+		log.Debugf("Dryrun mode, skipping POST")
+		return nil
+	}
+	resp, err := c.post(uri, json)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == 204 {
+		return nil
+	}
+
+	logBuffer := bytes.NewBuffer(make([]byte, 0))
+	resp.Write(logBuffer)
+	err = fmt.Errorf("Unexpected Response From POST")
+	log.Errorf("%s:\n%s", err, logBuffer)
+	return err
+}
+
 
 func (c *Cli) createIssueMetaData(project, issuetype string) (interface{}, error) {
 	uri := fmt.Sprintf("%s/rest/api/2/issue/createmeta?projectKeys=%s&issuetypeNames=%s&expand=projects.issuetypes.fields", c.endpoint, project, url.QueryEscape(issuetype))
